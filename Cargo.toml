@@ -1,0 +1,22 @@
+[package]
+name = "lsm-seal"
+version = "0.1.0"
+edition = "2024"
+description = "Tailored SurrealKV compact key-value wrapper: append-only LSM tree with embedded AEAD authentication and zstd compression"
+license = "Apache-2.0"
+
+[dependencies]
+chacha20poly1305 = "0.10"
+getrandom = "0.2"
+zstd = "0.13"
+crc32fast = "1"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[dev-dependencies]
+crc32fast = "1"
