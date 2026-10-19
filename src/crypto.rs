@@ -62,9 +62,9 @@ impl Cipher {
     }
 
     fn nonce(seq: u64) -> Nonce {
-        let mut n = [0u8; 12];
+        let mut n = Nonce::default();
         n[..8].copy_from_slice(&seq.to_le_bytes());
-        *Nonce::from_slice(&n)
+        n
     }
 
     fn aad(seq: u64, entry_key: &[u8]) -> Vec<u8> {

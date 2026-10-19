@@ -8,14 +8,10 @@ fn tmp(name: &str) -> std::path::PathBuf {
     p
 }
 
-fn key32(fill: u8) -> SealKey {
-    SealKey::new([fill; 32])
-}
-
 #[test]
 fn put_get_delete_scan() {
     let dir = tmp("basic");
-    let db = Db::open(&dir, &key32(1)).unwrap();
+    let db = Db::open(&dir, &SealKey::generate()).unwrap();
     db.put(b"aabb", b"one").unwrap();
     b"aabb01".to_vec();
     db.put(b"aabb01", b"two").unwrap();
@@ -43,7 +39,8 @@ fn put_get_delete_scan() {
 #[test]
 fn hex_key_enforced() {
     let dir = tmp("hex");
-    let db = Db::open(&dir, &key32(2)).unwrap();
+    let key = SealKey::generate();
+    let db = Db::open(&dir, &key).unwrap();
     assert!(matches!(db.put(b"zzzz", b"x"), Err(Error::InvalidHexKey)));
     assert!(matches!(db.put(b"abc", b"x"), Err(Error::InvalidHexKey)));
     assert!(matches!(db.get(b"not hex!"), Err(Error::InvalidHexKey)));
@@ -54,7 +51,7 @@ fn hex_key_enforced() {
         hex_keys: false,
         ..Default::default()
     };
-    let db = Db::open_with(&dir, &key32(2), opts).unwrap();
+    let db = Db::open_with(&dir, &key, opts).unwrap();
     db.put(b"any key", b"raw").unwrap();
     assert_eq!(db.get(b"any key").unwrap().unwrap(), b"raw");
     db.close().unwrap();
@@ -64,8 +61,9 @@ fn hex_key_enforced() {
 #[test]
 fn persistence_across_reopen() {
     let dir = tmp("persist");
+    let key = SealKey::generate();
     {
-        let db = Db::open(&dir, &key32(3)).unwrap();
+        let db = Db::open(&dir, &key).unwrap();
         for i in 0..500u32 {
             db.put(
                 format!("dead{:04x}", i).as_bytes(),
@@ -77,7 +75,7 @@ fn persistence_across_reopen() {
         db.close().unwrap();
     }
     {
-        let db = Db::open(&dir, &key32(3)).unwrap();
+        let db = Db::open(&dir, &key).unwrap();
         assert!(db.get(b"dead0000").unwrap().is_none());
         assert_eq!(db.get(b"dead0001").unwrap().unwrap(), b"v1");
         assert_eq!(db.get(b"dead01f3").unwrap().unwrap(), b"v499");
@@ -90,7 +88,7 @@ fn persistence_across_reopen() {
 #[test]
 fn wal_replay_after_drop_and_torn_tail() {
     let dir = tmp("torn");
-    let key = key32(4);
+    let key = SealKey::generate();
     {
         let db = Db::open(&dir, &key).unwrap();
         db.put(b"cafe01", b"keep-me").unwrap();
@@ -113,7 +111,11 @@ fn wal_replay_after_drop_and_torn_tail() {
         .map(|e| e.unwrap().path())
         .max()
         .unwrap();
-    let f = OpenOptions::new().read(true).write(true).open(&wal_path).unwrap();
+    let f = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&wal_path)
+        .unwrap();
     let len = f.metadata().unwrap().len();
     f.set_len(len - 3).unwrap();
     f.sync_all().unwrap();
@@ -131,12 +133,13 @@ fn wal_replay_after_drop_and_torn_tail() {
 #[test]
 fn wrong_key_rejected() {
     let dir = tmp("wrongkey");
+    let key = SealKey::generate();
     {
-        let db = Db::open(&dir, &key32(5)).unwrap();
+        let db = Db::open(&dir, &key).unwrap();
         db.put(b"beef00", b"secret").unwrap();
         db.close().unwrap();
     }
-    let db = Db::open(&dir, &key32(6)).unwrap();
+    let db = Db::open(&dir, &SealKey::generate()).unwrap();
     assert!(matches!(db.get(b"beef00"), Err(Error::Crypto)));
     assert!(matches!(db.scan_prefix(b"beef"), Err(Error::Crypto)));
     db.close().unwrap();
@@ -146,7 +149,7 @@ fn wrong_key_rejected() {
 #[test]
 fn tamper_detected_in_sst() {
     let dir = tmp("tamper");
-    let key = key32(7);
+    let key = SealKey::generate();
     let db = Db::open(&dir, &key).unwrap();
     for i in 0..100u32 {
         db.put(format!("aa{:04x}", i).as_bytes(), b"payload")
@@ -182,7 +185,7 @@ fn auto_flush_and_compaction() {
         compact_threshold: 3,
         ..Default::default()
     };
-    let db = Db::open_with(&dir, &key32(8), opts).unwrap();
+    let db = Db::open_with(&dir, &SealKey::generate(), opts).unwrap();
     for i in 0..2000u32 {
         db.put(format!("bb{:04x}", i).as_bytes(), &[i as u8; 40])
             .unwrap();
@@ -221,7 +224,7 @@ fn auto_flush_and_compaction() {
 #[test]
 fn compression_roundtrip_large_values() {
     let dir = tmp("zstd");
-    let db = Db::open(&dir, &key32(9)).unwrap();
+    let db = Db::open(&dir, &SealKey::generate()).unwrap();
     let big = vec![0xabu8; 100_000];
     let mixed: Vec<u8> = (0..50_000u32).map(|i| (i % 7) as u8).collect();
     db.put(b"cc0001", &big).unwrap();
@@ -238,7 +241,7 @@ fn compression_roundtrip_large_values() {
 #[test]
 fn empty_scan_and_empty_close() {
     let dir = tmp("empty");
-    let db = Db::open(&dir, &key32(10)).unwrap();
+    let db = Db::open(&dir, &SealKey::generate()).unwrap();
     assert!(db.scan_prefix(b"").unwrap().is_empty() || db.scan_prefix(b"aa").unwrap().is_empty());
     assert!(db.get(b"aa00").unwrap().is_none());
     db.close().unwrap();
